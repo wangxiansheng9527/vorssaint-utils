@@ -30,7 +30,7 @@ enum FeaturePreset: String, CaseIterable, Identifiable {
     var features: Set<AppFeature> {
         switch self {
         case .essential:
-            return [.mixer, .keepAwake,
+            return [.mixer, .keepAwake, .finderContextMenu,
                     .monitorCPU, .monitorGPU, .monitorMemory,
                     .monitorNetwork, .monitorDisk, .monitorPower]
         case .windows:
@@ -150,7 +150,7 @@ extension AppFeature {
              .bluetoothSleep, .keepAwake, .quickLauncher, .quickToggles, .quitApps, .colorPicker,
              .screenOCR, .cleaningMode, .mediaTools, .cleaner, .uninstaller, .homebrew, .screenshot,
              .cameraPreview, .scratchpad, .commandBar, .screenRecorder, .wallpaper, .fanControl,
-             .diskImageInstaller, .killProcess, .portManager:
+             .diskImageInstaller, .killProcess, .portManager, .finderContextMenu:
             return .idle
         case .appUpdates:
             // The list is on demand; only a background schedule keeps a timer.

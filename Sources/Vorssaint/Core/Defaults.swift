@@ -179,6 +179,14 @@ enum DefaultsKey {
     static let finderCutPasteShowHUD = "finderCutPasteShowHUD"
     static let finderRenameEnabled = "finderRenameEnabled"
     static let finderRenameShortcut = "finderRenameShortcut"
+    static let finderContextEnabled = "finderContextEnabled"
+    static let finderContextShowNewFile = "finderContextShowNewFile"
+    static let finderContextShowCopyPath = "finderContextShowCopyPath"
+    static let finderContextShowTerminal = "finderContextShowTerminal"
+    static let finderContextShowFavorites = "finderContextShowFavorites"
+    static let finderContextTerminal = "finderContextTerminal" // terminal | iTerm | warp | ghostty
+    static let finderContextTemplates = "finderContextTemplates" // Data: [FinderContextSupport.Template] JSON; absent = built-in set
+    static let finderContextFavorites = "finderContextFavorites" // Data: [FinderContextSupport.Favorite] JSON
     static let diskImageInstallerTrashesDownload = "diskImageInstallerTrashesDownload"
     static let diskImageInstallerRevealsApp = "diskImageInstallerRevealsApp"
     static let finderPasteImageAsFile = "finderPasteImageAsFile"
@@ -1824,6 +1832,12 @@ enum Defaults {
         DefaultsKey.pastePlainShortcut: GlobalShortcut.pastePlainDefault.storageValue,
         DefaultsKey.finderRenameEnabled: false,
         DefaultsKey.finderRenameShortcut: GlobalShortcut.finderRenameDefault.storageValue,
+        DefaultsKey.finderContextEnabled: true,
+        DefaultsKey.finderContextShowNewFile: true,
+        DefaultsKey.finderContextShowCopyPath: true,
+        DefaultsKey.finderContextShowTerminal: true,
+        DefaultsKey.finderContextShowFavorites: true,
+        DefaultsKey.finderContextTerminal: FinderContextSupport.Terminal.terminal.rawValue,
         DefaultsKey.diskImageInstallerUseUserApplications: false,
         DefaultsKey.diskImageInstallerTrashesDownload: true,
         DefaultsKey.diskImageInstallerRevealsApp: false,

@@ -62,6 +62,9 @@ FAN_HELPER_ID="$APP_BUNDLE_ID.fan-control"
 # Sources/NowPlayingAdapter. Staged under Contents/Frameworks, signed on its own.
 NOW_PLAYING_ADAPTER_ID="$APP_BUNDLE_ID.now-playing"
 NOW_PLAYING_ADAPTER="libVorssaintNowPlaying.dylib"
+FINDER_EXTENSION="VorssaintFinderMenu"
+FINDER_EXTENSION_ID="$APP_BUNDLE_ID.FinderMenu"
+FINDER_ENTITLEMENTS="Resources/FinderContextExtension.entitlements"
 TARGET="arm64-apple-macosx14.0"
 ENTITLEMENTS="Resources/Vorssaint.entitlements"
 LEGACY_IDENTITY="Vorssaint Utils Signing"
@@ -585,6 +588,9 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Uninstall/UninstallerSupport.swift
         Sources/Vorssaint/Services/ManagedDownloads/WhatsAppDownloadSupport.swift
         Sources/Vorssaint/Core/SecureInputSupport.swift
+        Sources/Vorssaint/Services/FinderContext/FinderContextSupport.swift
+        Sources/Vorssaint/Services/FinderContext/FinderContextWire.swift
+        Sources/Vorssaint/Core/FinderContextStrings.swift
         Tests/*.swift
         build/generated-tests/*.swift
     )
@@ -650,6 +656,16 @@ swiftc -O -target "$TARGET" -sdk "$SDK" "${SDK_COMPAT_FLAGS[@]}" -emit-library \
     Sources/Vorssaint/Services/Notch/NotchPlaybackCommand.swift \
     -o "build/$NOW_PLAYING_ADAPTER"
 
+echo "▸ Compiling Finder right-click extension…"
+# The module name must match NSExtensionPrincipalClass in its Info.plist, and
+# NSExtensionMain is the entry point Finder's extension host expects.
+swiftc -O -application-extension -module-name "$FINDER_EXTENSION" -target "$TARGET" -sdk "$SDK" \
+    "${SDK_COMPAT_FLAGS[@]}" \
+    Sources/Vorssaint/Services/FinderContext/FinderContextWire.swift \
+    Sources/FinderContextExtension/FinderContextExtension.swift \
+    -Xlinker -e -Xlinker _NSExtensionMain \
+    -o "build/$FINDER_EXTENSION"
+
 echo "▸ Generating app icon…"
 swift Tools/MakeIcon.swift build/AppIcon.iconset
 xattr -c -r build/AppIcon.iconset build/AppIcon.icns build/MenuBarIcon.png build/MenuBarIcon@2x.png build/BrandMark.png 2>/dev/null || true
@@ -696,6 +712,12 @@ cp Resources/agent-prices.json "$STAGE/Contents/Resources/agent-prices.json"
 cp Resources/com.vorssaint.utils.fan-control.plist \
     "$STAGE/Contents/Library/LaunchDaemons/$FAN_HELPER_ID.plist"
 cp Resources/Info.plist "$STAGE/Contents/Info.plist"
+FINDER_APPEX="$STAGE/Contents/PlugIns/$FINDER_EXTENSION.appex"
+mkdir -p "$FINDER_APPEX/Contents/MacOS"
+cp "build/$FINDER_EXTENSION" "$FINDER_APPEX/Contents/MacOS/$FINDER_EXTENSION"
+cp Resources/FinderContextExtension-Info.plist "$FINDER_APPEX/Contents/Info.plist"
+mkdir -p "$STAGE/Contents/Resources/FinderTemplates"
+cp Resources/FinderTemplates/* "$STAGE/Contents/Resources/FinderTemplates/"
 cp CHANGELOG.md "$STAGE/Contents/Resources/CHANGELOG.md"
 for lproj in Resources/*.lproj(N); do
     cp -R "$lproj" "$STAGE/Contents/Resources/"
@@ -720,6 +742,14 @@ if (( DEV )); then
     /usr/libexec/PlistBuddy -c "Add :VorssaintBuildCommit string '$SHA · $(date '+%Y-%m-%d %H:%M')'" "$STAGE/Contents/Info.plist"
     echo "  stamped dev build: $SHA"
 fi
+# The extension follows the app's identity and version, so the Developer and
+# official builds each carry (and talk to) an extension of their own.
+APP_SHORT_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$STAGE/Contents/Info.plist")"
+APP_BUILD_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$STAGE/Contents/Info.plist")"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $FINDER_EXTENSION_ID" "$FINDER_APPEX/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :VorssaintHostBundleID $APP_BUNDLE_ID" "$FINDER_APPEX/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_SHORT_VERSION" "$FINDER_APPEX/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_BUILD_VERSION" "$FINDER_APPEX/Contents/Info.plist"
 FAN_HELPER_VERSION="$(
     export LC_ALL=C
     /usr/bin/shasum -a 256 \
@@ -773,6 +803,21 @@ codesign_app() {
     fi
 }
 
+# Finder only loads sandboxed extensions, so this one is signed with its own
+# entitlements, and before the app that contains it.
+codesign_finder_extension() {
+    local target="$1"
+    if [[ -n "$DEVID" ]]; then
+        codesign_with_timestamp_retry --force --strip-disallowed-xattrs --options runtime --timestamp \
+            --entitlements "$FINDER_ENTITLEMENTS" --sign "$DEVID" "$target"
+    elif legacy_identity_installed; then
+        codesign --force --strip-disallowed-xattrs --entitlements "$FINDER_ENTITLEMENTS" \
+            --sign "$LEGACY_IDENTITY" "$target"
+    else
+        codesign --force --strip-disallowed-xattrs --entitlements "$FINDER_ENTITLEMENTS" --sign - "$target"
+    fi
+}
+
 codesign_fan_helper() {
     local target="$1"
     if [[ -n "$DEVID" ]]; then
@@ -804,6 +849,7 @@ sign_bundle() {
     local executable="$bundle/Contents/MacOS/$EXECUTABLE"
     local helper="$bundle/Contents/Library/LaunchServices/$FAN_HELPER_ID"
     local adapter="$bundle/Contents/Frameworks/$NOW_PLAYING_ADAPTER"
+    local finder_extension="$bundle/Contents/PlugIns/$FINDER_EXTENSION.appex"
 
     if [[ -n "$DEVID" ]]; then
         echo "  signing with Developer ID (hardened runtime): $DEVID"
@@ -814,6 +860,7 @@ sign_bundle() {
     fi
     [[ -f "$helper" ]] && codesign_fan_helper "$helper"
     [[ -f "$adapter" ]] && codesign_now_playing_adapter "$adapter"
+    [[ -d "$finder_extension" ]] && codesign_finder_extension "$finder_extension"
     codesign_app "$bundle"
 
     # If local filesystem metadata invalidates the first signature, sign once
@@ -823,6 +870,7 @@ sign_bundle() {
         xattr -c -r "$bundle" 2>/dev/null || true
         [[ -f "$helper" ]] && codesign_fan_helper "$helper"
         [[ -f "$adapter" ]] && codesign_now_playing_adapter "$adapter"
+        [[ -d "$finder_extension" ]] && codesign_finder_extension "$finder_extension"
         codesign_app "$bundle"
     fi
     [[ -f "$executable" ]] && codesign --verify --strict "$executable"

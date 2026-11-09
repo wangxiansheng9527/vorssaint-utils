@@ -371,6 +371,9 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
+            // The header's own button already folds the section; without this
+            // a sidebar on macOS 14 adds the system's fold arrow beside it.
+            .collapsible(false)
         }
     }
 
@@ -587,6 +590,7 @@ struct SettingsView: View {
         case .keyDebounce: KeyboardDebounceSettings()
         case .superKey: SuperKeySettings()
         case .cutPaste: CutPasteSettings()
+        case .finderContext: FinderContextSettings()
         case .autoQuit: AutoQuitSettings()
         case .quitProtection: QuitProtectionSettings()
         case .uninstaller: UninstallerView()
