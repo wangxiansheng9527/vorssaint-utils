@@ -58,6 +58,7 @@ enum SettingsSectionAnchor: String, CaseIterable, Hashable {
     case keyboardBrightnessShortcuts
     case fanControl
     case windowMaximizer
+    case beijingClock
 
     var page: SettingsPage {
         switch self {
@@ -73,7 +74,7 @@ enum SettingsSectionAnchor: String, CaseIterable, Hashable {
         case .finderCutPaste, .finderRename: return .cutPaste
         case .clipboardHistory, .pastePlain: return .clipboard
         case .quickLauncher, .quickToggles, .quitApps, .micMute, .cameraPreview, .wallpaper, .scratchpad,
-             .cleaningMode:
+             .cleaningMode, .beijingClock:
             return .quickTools
         case .screenshot, .screenRecorder, .colorPicker, .screenOCR:
             return .screenshot
@@ -381,6 +382,8 @@ extension AppFeature {
         case .radialMenu: return FeatureSettingsDestination(.radialMenu)
         case .scratchpad:
             return FeatureSettingsDestination(.quickTools, sectionAnchor: .scratchpad)
+        case .beijingClock:
+            return FeatureSettingsDestination(.quickTools, sectionAnchor: .beijingClock)
         case .commandBar: return FeatureSettingsDestination(.commandBar)
         case .screenRecorder:
             return FeatureSettingsDestination(.screenshot, sectionAnchor: .screenRecorder)
@@ -420,7 +423,7 @@ enum FeatureVisibilitySupport {
         case .shelf: return [.shelf]
         case .media: return [.mediaTools]
         case .quickTools: return [.quickLauncher, .quickToggles, .quitApps, .micMute,
-                                  .cameraPreview, .wallpaper, .scratchpad, .cleaningMode]
+                                  .cameraPreview, .wallpaper, .scratchpad, .cleaningMode, .beijingClock]
         case .urlCleaner: return [.urlCleaner]
         case .cleaner: return [.cleaner]
         case .homebrew: return [.homebrew]

@@ -26,6 +26,14 @@ struct QuickToolsSettings: View {
     @AppStorage(DefaultsKey.scratchpadTextSize) private var scratchpadTextSize = ScratchpadSupport.defaultTextSize
     @AppStorage(DefaultsKey.micMuteMenuBarIndicator) private var micMenuBarIndicator = false
     @AppStorage(DefaultsKey.cleaningModeKeepScreenVisible) private var cleaningModeKeepScreenVisible = false
+    @AppStorage(DefaultsKey.beijingClockEnabled) private var beijingClockEnabled = true
+    @AppStorage(DefaultsKey.beijingClockPlacement) private var beijingClockPlacement = BeijingClockSupport.Placement.island.rawValue
+    @AppStorage(DefaultsKey.beijingClockPrefix) private var beijingClockPrefix = BeijingClockSupport.PrefixStyle.beijing.rawValue
+    @AppStorage(DefaultsKey.beijingClockUse24Hour) private var beijingClockUse24Hour = true
+    @AppStorage(DefaultsKey.beijingClockShowSeconds) private var beijingClockShowSeconds = false
+    @AppStorage(DefaultsKey.beijingClockShowWeekday) private var beijingClockShowWeekday = true
+    @AppStorage(DefaultsKey.beijingClockShowDayOffset) private var beijingClockShowDayOffset = false
+    @AppStorage(DefaultsKey.beijingClockShowDate) private var beijingClockShowDate = false
 
     var body: some View {
         Form {
@@ -333,6 +341,20 @@ struct QuickToolsSettings: View {
                 }
                 .settingsFormSectionAnchor(.cleaningMode)
             }
+
+            if AppFeature.beijingClock.isAvailable {
+                BeijingClockSettingsSection(
+                    enabled: $beijingClockEnabled,
+                    placementRaw: $beijingClockPlacement,
+                    prefixRaw: $beijingClockPrefix,
+                    use24Hour: $beijingClockUse24Hour,
+                    showSeconds: $beijingClockShowSeconds,
+                    showWeekday: $beijingClockShowWeekday,
+                    showDayOffset: $beijingClockShowDayOffset,
+                    showDate: $beijingClockShowDate,
+                    language: l10n.language
+                )
+            }
         }
         .formStyle(.grouped)
     }
@@ -373,5 +395,83 @@ private struct CameraPermissionRow: View {
             }
             .controlSize(.small)
         }
+    }
+}
+
+private struct BeijingClockSettingsSection: View {
+    @Binding var enabled: Bool
+    @Binding var placementRaw: String
+    @Binding var prefixRaw: String
+    @Binding var use24Hour: Bool
+    @Binding var showSeconds: Bool
+    @Binding var showWeekday: Bool
+    @Binding var showDayOffset: Bool
+    @Binding var showDate: Bool
+    let language: AppLanguage
+
+    private var strings: BeijingClockFeatureStrings { FeatureStrings.beijingClock(language) }
+
+    private var options: BeijingClockSupport.DisplayOptions {
+        BeijingClockSupport.DisplayOptions(
+            placement: BeijingClockSupport.Placement.sanitized(placementRaw),
+            prefixStyle: BeijingClockSupport.PrefixStyle.sanitized(prefixRaw),
+            use24Hour: use24Hour,
+            showSeconds: showSeconds,
+            showWeekday: showWeekday,
+            showDayOffset: showDayOffset,
+            showDate: showDate
+        )
+    }
+
+    var body: some View {
+        Section {
+            Toggle(strings.enableLabel, isOn: $enabled)
+
+            if enabled {
+                TimelineView(.periodic(from: .now, by: showSeconds ? 1 : 15)) { context in
+                    HStack {
+                        Text(strings.previewTitle)
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(BeijingClockSupport.menuBarText(
+                                now: context.date, language: language, options: options
+                            ))
+                            .font(.system(.body, design: .default).monospacedDigit().weight(.medium))
+                            Text(BeijingClockSupport.relativeOffsetDescription(
+                                now: context.date, strings: strings
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Picker(strings.placementLabel, selection: $placementRaw) {
+                    Text(strings.placementIsland).tag(BeijingClockSupport.Placement.island.rawValue)
+                    Text(strings.placementMenuBar).tag(BeijingClockSupport.Placement.menuBar.rawValue)
+                }
+                .pickerStyle(.segmented)
+
+                Picker(strings.prefixLabel, selection: $prefixRaw) {
+                    Text(strings.prefixBeijing).tag(BeijingClockSupport.PrefixStyle.beijing.rawValue)
+                    Text(strings.prefixBJ).tag(BeijingClockSupport.PrefixStyle.bj.rawValue)
+                    Text(strings.prefixNone).tag(BeijingClockSupport.PrefixStyle.none.rawValue)
+                }
+                .pickerStyle(.segmented)
+
+                Toggle(strings.showWeekdayLabel, isOn: $showWeekday)
+                Toggle(strings.use24HourLabel, isOn: $use24Hour)
+                Toggle(strings.showSecondsLabel, isOn: $showSeconds)
+                Toggle(strings.showDateLabel, isOn: $showDate)
+                Toggle(strings.showDayOffsetLabel, isOn: $showDayOffset)
+            }
+
+            Text(strings.caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text(strings.pageTitle)
+        }
+        .settingsFormSectionAnchor(.beijingClock)
     }
 }

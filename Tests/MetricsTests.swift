@@ -239,6 +239,7 @@ struct MetricsTests {
                 KeepAwakeTimerHandoffTests.run { suite.expect($0, $1) }
             }),
             ("finder-context", { FinderContextMenuTests.run(suite) }),
+            ("beijing-clock", { BeijingClockTests.run(suite) }),
             ("wallpaper", {
                 WallpaperContract.run(suite)
                 WallpaperThumbnailTests.run(suite)

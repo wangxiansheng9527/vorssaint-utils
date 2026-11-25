@@ -143,6 +143,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             // any status item.
             ClipboardHistoryService.shared.toggleHistoryWindow()
         }
+        statusController.onBeijingClockClick = { [weak self] item, anchorView in
+            self?.presentBeijingClockMenu(on: item, anchorView: anchorView)
+        }
+        statusController.onBeijingClockRightClick = { [weak self] anchorView in
+            self?.showContextMenu(from: nil, anchorView: anchorView)
+        }
         // The shelf drop zone chip anchors itself under the menu bar icon.
         ShelfService.shared.statusItemFrameProvider = { [weak self] in
             guard let item = self?.statusController.statusItem, item.isVisible,
@@ -1611,19 +1617,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
     // MARK: - Context menu (right click)
 
-    private func showContextMenu(from button: NSStatusBarButton?) {
+    private func showContextMenu(from button: NSStatusBarButton?, anchorView: NSView? = nil) {
         // The panel uses applicationDefined dismissal, so a right-click while it's
         // open won't close it on its own — and the menu would try to open behind it.
         // Close it first so the context menu always appears.
         if popover.isShown {
-            closePopover { [weak self] in self?.presentContextMenu(from: button) }
+            closePopover { [weak self] in self?.presentContextMenu(from: button, anchorView: anchorView) }
             return
         }
 
-        presentContextMenu(from: button)
+        presentContextMenu(from: button, anchorView: anchorView)
     }
 
-    private func presentContextMenu(from button: NSStatusBarButton?) {
+    private func presentContextMenu(from button: NSStatusBarButton?, anchorView: NSView? = nil) {
         let manager = KeepAwakeManager.shared
         let strings = L10n.shared.s
         let menu = NSMenu()
@@ -1696,6 +1702,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         quitItem.target = self
         menu.addItem(quitItem)
 
+        if let anchorView {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: anchorView)
+            return
+        }
+
         let host = statusController.menuHost(for: button)
         host.menu = menu
         host.button?.performClick(nil)
@@ -1727,6 +1738,138 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
     @objc private func menuOpenShelf() {
         ShelfService.shared.expandDocked()
+    }
+
+    // MARK: - Beijing Time menu
+
+    private func presentBeijingClockMenu(on item: NSStatusItem?, anchorView: NSView) {
+        if popover.isShown {
+            closePopover { [weak self] in self?.showBeijingClockMenu(on: item, anchorView: anchorView) }
+            return
+        }
+        showBeijingClockMenu(on: item, anchorView: anchorView)
+    }
+
+    private func showBeijingClockMenu(on item: NSStatusItem?, anchorView: NSView) {
+        let now = Date()
+        let defaults = UserDefaults.standard
+        let language = L10n.shared.language
+        let strings = FeatureStrings.beijingClock(language)
+        let options = BeijingClockSupport.DisplayOptions.fromDefaults(defaults)
+
+        let menu = NSMenu()
+
+        let fullDateTime = BeijingClockSupport.formattedFullDateTime(
+            now: now, language: language, use24Hour: options.use24Hour, showSeconds: true
+        )
+        let headerItem = NSMenuItem(title: "\(fullDateTime) (UTC+8)", action: nil, keyEquivalent: "")
+        headerItem.isEnabled = false
+        menu.addItem(headerItem)
+
+        var diffText = BeijingClockSupport.relativeOffsetDescription(now: now, strings: strings)
+        if let tag = BeijingClockSupport.dayOffsetTag(now: now, strings: strings) {
+            diffText += " · \(tag)"
+        }
+        let diffItem = NSMenuItem(title: diffText, action: nil, keyEquivalent: "")
+        diffItem.isEnabled = false
+        menu.addItem(diffItem)
+
+        menu.addItem(.separator())
+
+        let timeString = BeijingClockSupport.formattedTime(
+            now: now, use24Hour: options.use24Hour, showSeconds: options.showSeconds
+        )
+        let copyTimeItem = NSMenuItem(
+            title: String(format: strings.copyTimeFormat, timeString),
+            action: #selector(menuCopyBeijingTime(_:)),
+            keyEquivalent: ""
+        )
+        copyTimeItem.target = self
+        copyTimeItem.representedObject = timeString
+        menu.addItem(copyTimeItem)
+
+        let fullCopyString = BeijingClockSupport.copyableFullDateTime(now: now, use24Hour: options.use24Hour)
+        let copyFullItem = NSMenuItem(
+            title: String(format: strings.copyFullFormat, fullCopyString),
+            action: #selector(menuCopyBeijingTime(_:)),
+            keyEquivalent: ""
+        )
+        copyFullItem.target = self
+        copyFullItem.representedObject = fullCopyString
+        menu.addItem(copyFullItem)
+
+        menu.addItem(.separator())
+
+        let placementMenuItem = NSMenuItem(title: strings.placementLabel, action: nil, keyEquivalent: "")
+        let placementSubmenu = NSMenu()
+        for (title, placement) in [
+            (strings.placementIsland, BeijingClockSupport.Placement.island),
+            (strings.placementMenuBar, BeijingClockSupport.Placement.menuBar),
+        ] {
+            let entry = NSMenuItem(title: title, action: #selector(menuSetBeijingClockPlacement(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = placement.rawValue
+            entry.state = options.placement == placement ? .on : .off
+            placementSubmenu.addItem(entry)
+        }
+        placementMenuItem.submenu = placementSubmenu
+        menu.addItem(placementMenuItem)
+
+        let toggleItems: [(title: String, key: String, state: Bool)] = [
+            (strings.showWeekdayLabel, DefaultsKey.beijingClockShowWeekday, options.showWeekday),
+            (strings.showSecondsLabel, DefaultsKey.beijingClockShowSeconds, options.showSeconds),
+            (strings.use24HourLabel, DefaultsKey.beijingClockUse24Hour, options.use24Hour),
+            (strings.showDateLabel, DefaultsKey.beijingClockShowDate, options.showDate),
+            (strings.showDayOffsetLabel, DefaultsKey.beijingClockShowDayOffset, options.showDayOffset),
+        ]
+        for entry in toggleItems {
+            let toggleItem = NSMenuItem(title: entry.title, action: #selector(menuToggleBeijingClockOption(_:)), keyEquivalent: "")
+            toggleItem.target = self
+            toggleItem.representedObject = entry.key
+            toggleItem.state = entry.state ? .on : .off
+            menu.addItem(toggleItem)
+        }
+
+        menu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(title: strings.openSettings, action: #selector(menuOpenBeijingClockSettings), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        if let item, let button = anchorView as? NSStatusBarButton {
+            item.menu = menu
+            button.performClick(nil)
+            DispatchQueue.main.async {
+                item.menu = nil
+            }
+        } else {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: anchorView)
+        }
+    }
+
+    @objc private func menuCopyBeijingTime(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        let strings = FeatureStrings.beijingClock(L10n.shared.language)
+        QuickToolHUD.show(icon: "clock", message: String(format: strings.copiedHUDFormat, text))
+    }
+
+    @objc private func menuToggleBeijingClockOption(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        let defaults = UserDefaults.standard
+        defaults.set(!defaults.bool(forKey: key), forKey: key)
+    }
+
+    @objc private func menuSetBeijingClockPlacement(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(raw, forKey: DefaultsKey.beijingClockPlacement)
+    }
+
+    @objc private func menuOpenBeijingClockSettings() {
+        SettingsRouter.shared.request(AppFeature.beijingClock.settingsDestination)
+        openSettingsWindow()
     }
 
     @objc private func menuCheckUpdates() {

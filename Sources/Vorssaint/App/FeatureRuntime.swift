@@ -383,6 +383,7 @@ final class FeatureRuntime: ObservableObject {
             if AppFeature.notch.isAvailable { NotchService.shared.syncWithPreferences() }
         },
         .scratchpad: { ScratchpadService.shared.syncWithPreferences() },
+        .beijingClock: { NotificationCenter.default.post(name: StatusItemController.beijingClockNeedsSyncNotification, object: nil) },
         .commandBar: { CommandBarService.shared.syncWithPreferences() },
         .cleaner: {
             CleanerScheduler.shared.syncWithPreferences()

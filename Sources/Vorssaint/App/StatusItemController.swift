@@ -13,6 +13,10 @@ final class StatusItemController {
     var onRightClick: ((NSStatusBarButton?) -> Void)?
     var onMetricClick: ((MenuBarMetric, NSStatusBarButton) -> Void)?
     var onClipboardPreviewClick: (() -> Void)?
+    var onBeijingClockClick: ((NSStatusItem?, NSView) -> Void)?
+    var onBeijingClockRightClick: ((NSView) -> Void)?
+
+    static let beijingClockNeedsSyncNotification = Notification.Name("VorssaintBeijingClockNeedsSync")
 
     private(set) var statusItem: NSStatusItem!
     /// The optional "show latest copy" item: same shape as a metric item —
@@ -20,6 +24,11 @@ final class StatusItemController {
     /// MenuBarMetric, since its content comes from ClipboardHistoryService
     /// rather than a SystemSnapshot reading.
     private var clipboardPreviewStatusItem: NSStatusItem?
+    private var beijingClockStatusItem: NSStatusItem?
+    private var beijingClockIslandPanel: BeijingClockIslandPanel?
+    private var beijingClockIslandView: BeijingClockIslandContentView?
+    private var beijingClockTimer: Timer?
+    private var beijingClockObservers: [(NotificationCenter, NSObjectProtocol)] = []
     private var metricStatusItems: [String: NSStatusItem] = [:]
     private var metricStatusItemFocus: [String: MenuBarMetric] = [:]
     private var cancellables = Set<AnyCancellable>()
@@ -60,6 +69,7 @@ final class StatusItemController {
     private static let mainAutosaveName = "VorssaintMenuBarItem"
     private static let metricAutosavePrefix = "VorssaintMetric"
     private static let clipboardPreviewAutosaveName = "VorssaintClipboardPreview"
+    private static let beijingClockAutosaveName = "VorssaintBeijingClock"
     private static let emptyStatusImage = NSImage()
 
     /// One separate menu bar item: a metric, or a metric with its temperature
@@ -82,13 +92,17 @@ final class StatusItemController {
     var button: NSStatusBarButton? { statusItem.button }
 
     func containsStatusItem(at screenPoint: NSPoint) -> Bool {
-        let items = [statusItem, clipboardPreviewStatusItem].compactMap { $0 } + Array(metricStatusItems.values)
+        let items = [statusItem, clipboardPreviewStatusItem, beijingClockStatusItem].compactMap { $0 } + Array(metricStatusItems.values)
         // A hidden item keeps its last frame, which another app's item may
         // occupy by now.
         let buttons = items.filter(\.isVisible).compactMap(\.button)
         // Bound once for the whole scan: a default argument is evaluated per
         // call, so leaving it to the default would rebuild this per button.
         let screenFrames = NSScreen.screens.map(\.frame)
+        if let panel = beijingClockIslandPanel, panel.isVisible,
+           panel.frame.insetBy(dx: -4, dy: -4).contains(screenPoint) {
+            return true
+        }
         return buttons.contains { button in
             guard let frame = button.window?.frame,
                   StatusItemAnchorSupport.isTrustworthyStatusFrame(frame, screenFrames: screenFrames)
@@ -191,7 +205,10 @@ final class StatusItemController {
 
         L10n.shared.$language
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
+            .sink { [weak self] _ in
+                self?.refresh()
+                self?.syncBeijingClockItem()
+            }
             .store(in: &cancellables)
 
         SystemMonitor.shared.$snapshot
@@ -213,6 +230,12 @@ final class StatusItemController {
             .store(in: &cancellables)
 
         bindClipboardPreviewIfAvailable()
+        syncBeijingClockItem()
+
+        NotificationCenter.default.publisher(for: Self.beijingClockNeedsSyncNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.syncBeijingClockItem() }
+            .store(in: &cancellables)
 
         defaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
                                                                   object: nil,
@@ -237,6 +260,7 @@ final class StatusItemController {
             self.refresh()
             self.bindClipboardPreviewIfAvailable()
             self.syncClipboardPreviewItem()
+            self.syncBeijingClockItem()
         }
     }
 
@@ -273,6 +297,7 @@ final class StatusItemController {
         if let clipboardPreviewStatusItem {
             NSStatusBar.system.removeStatusItem(clipboardPreviewStatusItem)
         }
+        removeBeijingClockStatusItem()
     }
 
     /// Keeps the background sampler in step with the menu bar settings: it runs
@@ -430,7 +455,7 @@ final class StatusItemController {
     /// that is out of the bar has nowhere on screen to open from.
     func menuHost(for button: NSStatusBarButton?) -> NSStatusItem {
         guard !statusItem.isVisible, let button else { return statusItem }
-        let others = [clipboardPreviewStatusItem].compactMap { $0 } + Array(metricStatusItems.values)
+        let others = [clipboardPreviewStatusItem, beijingClockStatusItem].compactMap { $0 } + Array(metricStatusItems.values)
         return others.first { $0.button === button } ?? statusItem
     }
 
@@ -876,6 +901,205 @@ final class StatusItemController {
         guard let item = clipboardPreviewStatusItem else { return }
         clipboardPreviewStatusItem = nil
         NSStatusBar.system.removeStatusItem(item)
+    }
+
+    // MARK: - Beijing Time status item & top-center island capsule
+
+    private func syncBeijingClockItem() {
+        let defaults = UserDefaults.standard
+        guard AppFeature.beijingClock.isAvailable,
+              defaults.bool(forKey: DefaultsKey.beijingClockEnabled)
+        else {
+            removeAllBeijingClockPresentation()
+            return
+        }
+
+        let placement = BeijingClockSupport.Placement.sanitized(
+            defaults.string(forKey: DefaultsKey.beijingClockPlacement)
+        )
+        switch placement {
+        case .island:
+            removeBeijingClockStatusBarItemOnly()
+            ensureBeijingClockIslandPanel()
+        case .menuBar:
+            removeBeijingClockIslandPanelOnly()
+            let item = beijingClockStatusItem ?? installBeijingClockStatusItem()
+            if item.length != NSStatusItem.variableLength {
+                item.length = NSStatusItem.variableLength
+            }
+            if !item.isVisible {
+                item.isVisible = true
+            }
+        }
+        installBeijingClockObserversIfNeeded()
+        updateBeijingClockDisplay()
+    }
+
+    private func installBeijingClockStatusItem() -> NSStatusItem {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = Self.beijingClockAutosaveName
+        item.behavior = []
+        beijingClockStatusItem = item
+        item.isVisible = true
+        if let button = item.button {
+            button.image = Self.emptyStatusImage
+            button.imagePosition = .noImage
+            button.font = Self.beijingClockFont()
+            button.alignment = .left
+            button.cell?.lineBreakMode = .byClipping
+            button.cell?.usesSingleLineMode = true
+            button.target = self
+            button.action = #selector(beijingClockClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        return item
+    }
+
+    private func ensureBeijingClockIslandPanel() {
+        guard beijingClockIslandPanel == nil else { return }
+        let initialFrame = CGRect(x: 0, y: 0, width: 140, height: 20)
+        let panel = BeijingClockIslandPanel(frame: initialFrame)
+        let contentView = BeijingClockIslandContentView(frame: NSRect(origin: .zero, size: initialFrame.size))
+        contentView.onLeftClick = { [weak self] view in
+            self?.onBeijingClockClick?(nil, view)
+        }
+        contentView.onRightClick = { [weak self] view in
+            self?.onBeijingClockRightClick?(view)
+        }
+        panel.contentView = contentView
+        beijingClockIslandPanel = panel
+        beijingClockIslandView = contentView
+    }
+
+    private static func beijingClockFont() -> NSFont {
+        let size = NSFont.menuBarFont(ofSize: 0).pointSize
+        return NSFont.monospacedDigitSystemFont(ofSize: size > 0 ? size : 13, weight: .regular)
+    }
+
+    private func updateBeijingClockDisplay() {
+        let defaults = UserDefaults.standard
+        let options = BeijingClockSupport.DisplayOptions.fromDefaults(defaults)
+        let now = Date()
+        let language = L10n.shared.language
+        let title = BeijingClockSupport.menuBarText(now: now, language: language, options: options)
+        let tooltip = BeijingClockSupport.tooltipText(now: now, language: language, use24Hour: options.use24Hour)
+
+        switch options.placement {
+        case .island:
+            if let screen = NSScreen.screens.first ?? NSScreen.main,
+               let panel = beijingClockIslandPanel,
+               let contentView = beijingClockIslandView {
+                contentView.update(text: title, tooltip: tooltip)
+                let width = BeijingClockIslandContentView.measuredWidth(for: title)
+                let targetFrame = BeijingClockSupport.islandFrame(
+                    screenFrame: screen.frame,
+                    visibleFrame: screen.visibleFrame,
+                    safeAreaTop: screen.safeAreaInsets.top,
+                    menuBarThickness: NSStatusBar.system.thickness,
+                    contentWidth: width
+                )
+                if panel.frame != targetFrame {
+                    panel.setFrame(targetFrame, display: true)
+                }
+                if !panel.isVisible {
+                    panel.orderFrontRegardless()
+                }
+            }
+        case .menuBar:
+            if let button = beijingClockStatusItem?.button {
+                if button.image !== Self.emptyStatusImage {
+                    button.image = Self.emptyStatusImage
+                }
+                if button.imagePosition != .noImage {
+                    button.imagePosition = .noImage
+                }
+                let font = Self.beijingClockFont()
+                if button.font?.isEqual(font) != true {
+                    button.font = font
+                }
+                if button.title != title {
+                    button.title = title
+                }
+                if button.toolTip != tooltip {
+                    button.toolTip = tooltip
+                }
+            }
+        }
+
+        scheduleBeijingClockTimer(now: now, showSeconds: options.showSeconds)
+    }
+
+    private func scheduleBeijingClockTimer(now: Date, showSeconds: Bool) {
+        beijingClockTimer?.invalidate()
+        let interval = BeijingClockSupport.nextRefreshInterval(now: now, showSeconds: showSeconds)
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            self?.updateBeijingClockDisplay()
+        }
+        timer.tolerance = showSeconds ? 0.05 : 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        beijingClockTimer = timer
+    }
+
+    private func installBeijingClockObserversIfNeeded() {
+        guard beijingClockObservers.isEmpty else { return }
+        let refreshHandler: (Notification) -> Void = { [weak self] _ in
+            DispatchQueue.main.async { self?.updateBeijingClockDisplay() }
+        }
+        let defaultNames: [Notification.Name] = [
+            .NSSystemClockDidChange,
+            .NSSystemTimeZoneDidChange,
+            .NSCalendarDayChanged,
+            NSApplication.didChangeScreenParametersNotification,
+        ]
+        for name in defaultNames {
+            let token = NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main, using: refreshHandler
+            )
+            beijingClockObservers.append((NotificationCenter.default, token))
+        }
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.activeSpaceDidChangeNotification] {
+            let token = workspaceCenter.addObserver(
+                forName: name, object: nil, queue: .main, using: refreshHandler
+            )
+            beijingClockObservers.append((workspaceCenter, token))
+        }
+    }
+
+    @objc private func beijingClockClicked() {
+        guard let item = beijingClockStatusItem, let button = item.button else { return }
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            onRightClick?(button)
+            return
+        }
+        onBeijingClockClick?(item, button)
+    }
+
+    private func removeBeijingClockStatusBarItemOnly() {
+        guard let item = beijingClockStatusItem else { return }
+        beijingClockStatusItem = nil
+        NSStatusBar.system.removeStatusItem(item)
+    }
+
+    private func removeBeijingClockIslandPanelOnly() {
+        beijingClockIslandPanel?.orderOut(nil)
+        beijingClockIslandPanel = nil
+        beijingClockIslandView = nil
+    }
+
+    private func removeAllBeijingClockPresentation() {
+        beijingClockTimer?.invalidate()
+        beijingClockTimer = nil
+        for (center, token) in beijingClockObservers {
+            center.removeObserver(token)
+        }
+        beijingClockObservers.removeAll()
+        removeBeijingClockStatusBarItemOnly()
+        removeBeijingClockIslandPanelOnly()
+    }
+
+    private func removeBeijingClockStatusItem() {
+        removeAllBeijingClockPresentation()
     }
 }
 

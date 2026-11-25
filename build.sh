@@ -591,6 +591,8 @@ if (( TEST )); then
         Sources/Vorssaint/Services/FinderContext/FinderContextSupport.swift
         Sources/Vorssaint/Services/FinderContext/FinderContextWire.swift
         Sources/Vorssaint/Core/FinderContextStrings.swift
+        Sources/Vorssaint/Services/QuickTools/BeijingClockSupport.swift
+        Sources/Vorssaint/Core/BeijingClockStrings.swift
         Tests/*.swift
         build/generated-tests/*.swift
     )

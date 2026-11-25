@@ -187,6 +187,14 @@ enum DefaultsKey {
     static let finderContextTerminal = "finderContextTerminal" // terminal | iTerm | warp | ghostty
     static let finderContextTemplates = "finderContextTemplates" // Data: [FinderContextSupport.Template] JSON; absent = built-in set
     static let finderContextFavorites = "finderContextFavorites" // Data: [FinderContextSupport.Favorite] JSON
+    static let beijingClockEnabled = "beijingClockEnabled"
+    static let beijingClockPlacement = "beijingClockPlacement" // island | menuBar
+    static let beijingClockPrefix = "beijingClockPrefix" // beijing | bj | none
+    static let beijingClockUse24Hour = "beijingClockUse24Hour"
+    static let beijingClockShowSeconds = "beijingClockShowSeconds"
+    static let beijingClockShowWeekday = "beijingClockShowWeekday"
+    static let beijingClockShowDayOffset = "beijingClockShowDayOffset"
+    static let beijingClockShowDate = "beijingClockShowDate"
     static let diskImageInstallerTrashesDownload = "diskImageInstallerTrashesDownload"
     static let diskImageInstallerRevealsApp = "diskImageInstallerRevealsApp"
     static let finderPasteImageAsFile = "finderPasteImageAsFile"
@@ -1838,6 +1846,14 @@ enum Defaults {
         DefaultsKey.finderContextShowTerminal: true,
         DefaultsKey.finderContextShowFavorites: true,
         DefaultsKey.finderContextTerminal: FinderContextSupport.Terminal.terminal.rawValue,
+        DefaultsKey.beijingClockEnabled: true,
+        DefaultsKey.beijingClockPlacement: BeijingClockSupport.Placement.island.rawValue,
+        DefaultsKey.beijingClockPrefix: BeijingClockSupport.PrefixStyle.beijing.rawValue,
+        DefaultsKey.beijingClockUse24Hour: true,
+        DefaultsKey.beijingClockShowSeconds: false,
+        DefaultsKey.beijingClockShowWeekday: true,
+        DefaultsKey.beijingClockShowDayOffset: false,
+        DefaultsKey.beijingClockShowDate: false,
         DefaultsKey.diskImageInstallerUseUserApplications: false,
         DefaultsKey.diskImageInstallerTrashesDownload: true,
         DefaultsKey.diskImageInstallerRevealsApp: false,

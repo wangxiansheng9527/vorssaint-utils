@@ -30,7 +30,7 @@ enum FeaturePreset: String, CaseIterable, Identifiable {
     var features: Set<AppFeature> {
         switch self {
         case .essential:
-            return [.mixer, .keepAwake, .finderContextMenu,
+            return [.mixer, .keepAwake, .finderContextMenu, .beijingClock,
                     .monitorCPU, .monitorGPU, .monitorMemory,
                     .monitorNetwork, .monitorDisk, .monitorPower]
         case .windows:
@@ -157,6 +157,8 @@ extension AppFeature {
             return AppUpdatesSupport.CheckFrequency.sanitized(
                 UserDefaults.standard.string(forKey: DefaultsKey.appUpdatesCheckFrequency)) == .off
                 ? .idle : .periodic
+        case .beijingClock:
+            return UserDefaults.standard.bool(forKey: DefaultsKey.beijingClockEnabled) ? .periodic : .idle
         }
     }
 }

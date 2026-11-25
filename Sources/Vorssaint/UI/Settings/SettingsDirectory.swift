@@ -423,6 +423,8 @@ enum SettingsDirectory {
                                         (.wallpaper,
                                          [FeatureStrings.wallpaper(language).pageTitle]),
                                         (.scratchpad, [FeatureStrings.scratchpad(language).pageTitle]),
+                                        (.beijingClock, [FeatureStrings.beijingClock(language).pageTitle,
+                                                         FeatureStrings.beijingClock(language).enableLabel]),
                                         (.cleaningMode, [s.cleaningMenuItem, s.cleaningKeepScreenVisibleToggle]),
                                        ]),
                 SettingsDirectoryItem(page: .screenshot,
